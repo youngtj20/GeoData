@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+.agon-map .mapboxgl-popup {
+  max-width: 268px;
+}
+
+.agon-map .mapboxgl-popup-content {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  font-family: inherit;
+  box-shadow:
+    0 12px 30px -10px rgba(15, 23, 42, 0.3),
+    0 2px 8px -3px rgba(15, 23, 42, 0.16);
+}
+
+.agon-map .mapboxgl-popup-tip {
+  border-top-color: #fff !important;
+  border-bottom-color: #fff !important;
+}
+
+.cc-pop {
+  min-width: 184px;
+  background: #fff;
+  border: 1.5px solid transparent;
+  border-radius: 14px;
+}
+
+.cc-pop-top {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cc-pop-top span {
+  display: block;
+}
+
+.cc-pop-top span:first-child {
+  height: 3px;
+}
+
+.cc-pop-top span:last-child {
+  height: 6px;
+}
+
+.cc-pop-body {
+  padding: 9px 12px 10px;
+}
+
+.cc-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.cc-pop-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+.cc-pop-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.cc-pop-main {
+  min-width: 0;
+}
+
+.cc-pop-title {
+  font-weight: 800;
+  font-size: 12.5px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: #1c1917;
+}
+
+.cc-pop-kicker {
+  display: block;
+  font-weight: 800;
+  font-size: 12.5px;
+  color: #1c1917;
+}
+
+.cc-pop-code {
+  display: block;
+  margin-top: 1px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #15803d;
+}
+
+.cc-pop-pill {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cc-pop-meta {
+  margin-top: 7px;
+  font-size: 10.5px;
+  color: #57534e;
+}
+
+.cc-pop-mono {
+  margin-top: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: #44403c;
+}
+
+.cc-pop-badge {
+  display: inline-block;
+  margin-top: 7px;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cc-pop-fcenter .cc-pop-mono {
+  text-align: center;
+}
+
+.cc-pop-fcenter .cc-pop-badge {
+  display: block;
+  width: max-content;
+  margin-left: auto;
+  margin-right: auto;
+}

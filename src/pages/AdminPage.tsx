@@ -1,0 +1,372 @@
+import { useEffect, useState } from "react";
+import { Navigate, Link } from "react-router-dom";
+import { LoaderCircle, LogOut, ShieldCheck, Map as MapIcon, Users as UsersIcon, Trash2, Plus, Check } from "lucide-react";
+import { useAuth } from "../lib/AuthContext";
+import {
+  fetchMapSettings,
+  updateMapSettings,
+  fetchPermissionCatalog,
+  fetchAdminUsers,
+  createAdminUser,
+  updateUserPermissions,
+  deleteAdminUser,
+  type MapSettings,
+  type Permission,
+  type AdminUser,
+} from "../lib/api";
+
+export default function AdminPage() {
+  const { user, loading, logout, hasPermission } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-stone-100">
+        <LoaderCircle className="h-6 w-6 animate-spin text-green-800" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+
+  return (
+    <div className="min-h-screen bg-stone-100">
+      <header className="sticky top-0 z-10 border-b border-black/10 bg-gradient-to-r from-green-950 via-green-900 to-emerald-900 text-white shadow-sm">
+        <div className="mx-auto flex max-w-[1100px] items-center gap-3 px-4 py-3">
+          <img src="/algon-seal.png" alt="ALGON seal" className="h-9 w-9 shrink-0 rounded-full bg-white shadow" />
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-black leading-tight">Admin — ALGON POA SYSTEM</h1>
+            <p className="truncate text-xs text-emerald-100/90">Signed in as {user.username}</p>
+          </div>
+          <Link to="/" className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20">
+            View public map
+          </Link>
+          <button
+            onClick={() => logout()}
+            className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-green-900 hover:bg-amber-50"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Log out
+          </button>
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-[1100px] flex-col gap-5 p-4">
+        <MapSettingsPanel hasPermission={hasPermission} />
+        {hasPermission("manage_users") && <UsersPanel />}
+        {!hasPermission("manage_users") && (
+          <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
+            You don't have the <code className="rounded bg-slate-100 px-1">manage_users</code> permission, so user management is hidden.
+          </p>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function MapSettingsPanel({ hasPermission }: { hasPermission: (key: string) => boolean }) {
+  const [settings, setSettings] = useState<MapSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetchMapSettings().then(setSettings).catch((e) => setError(e.message));
+  }, []);
+
+  const canProvider = hasPermission("change_map_provider");
+  const canWards = hasPermission("toggle_layer_wards");
+  const canBuildings = hasPermission("toggle_layer_buildings");
+  const canSettlements = hasPermission("toggle_layer_settlements");
+  const canEditAnything = canProvider || canWards || canBuildings || canSettlements;
+
+  async function save(patch: Partial<MapSettings>) {
+    if (!settings) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const updated = await updateMapSettings(patch);
+      setSettings(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+        <MapIcon className="h-4 w-4 text-green-800" /> Public map settings
+      </h2>
+
+      {!settings && !error && <LoaderCircle className="h-4 w-4 animate-spin text-slate-400" />}
+      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+
+      {settings && (
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Map provider</p>
+            <div className="flex gap-2">
+              {(["google", "mapbox", "osm"] as const).map((p) => (
+                <button
+                  key={p}
+                  disabled={!canProvider}
+                  onClick={() => save({ provider: p })}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold capitalize ring-1 transition ${
+                    settings.provider === p
+                      ? "bg-green-900 text-white ring-green-900"
+                      : "bg-white text-slate-600 ring-slate-300 hover:bg-slate-50"
+                  } ${!canProvider ? "cursor-not-allowed opacity-50" : ""}`}
+                >
+                  {p === "osm" ? "OSM" : p}
+                </button>
+              ))}
+            </div>
+            {!canProvider && <p className="mt-1 text-[11px] text-slate-400">Requires change_map_provider permission.</p>}
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Layers visible on the public map</p>
+            <div className="flex flex-col gap-2">
+              <LayerToggle
+                label="Ward / LGA boundaries"
+                checked={settings.show_wards}
+                disabled={!canWards}
+                onChange={(v) => save({ show_wards: v })}
+              />
+              <LayerToggle
+                label="Building footprints"
+                checked={settings.show_buildings}
+                disabled={!canBuildings}
+                onChange={(v) => save({ show_buildings: v })}
+              />
+              <LayerToggle
+                label="GRID3 settlement density blocks"
+                checked={settings.show_settlements}
+                disabled={!canSettlements}
+                onChange={(v) => save({ show_settlements: v })}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            {saving && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            {saved && (
+              <span className="flex items-center gap-1 font-semibold text-green-700">
+                <Check className="h-3.5 w-3.5" /> Saved
+              </span>
+            )}
+            {!canEditAnything && <span className="text-slate-400">You have no permission to change these settings.</span>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LayerToggle({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className={`flex items-center gap-2 text-sm ${disabled ? "opacity-50" : ""}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 accent-green-800"
+      />
+      {label}
+    </label>
+  );
+}
+
+function UsersPanel() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [catalog, setCatalog] = useState<Permission[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+
+  async function refresh() {
+    try {
+      const [u, p] = await Promise.all([fetchAdminUsers(), fetchPermissionCatalog()]);
+      setUsers(u);
+      setCatalog(p);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function togglePermission(u: AdminUser, key: string) {
+    const next = u.permissions.includes(key) ? u.permissions.filter((k) => k !== key) : [...u.permissions, key];
+    setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, permissions: next } : x)));
+    try {
+      await updateUserPermissions(u.id, next);
+    } catch (e: any) {
+      setError(e.message);
+      refresh();
+    }
+  }
+
+  async function removeUser(u: AdminUser) {
+    if (!confirm(`Delete user "${u.username}"? This cannot be undone.`)) return;
+    try {
+      await deleteAdminUser(u.id);
+      setUsers((prev) => prev.filter((x) => x.id !== u.id));
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+          <UsersIcon className="h-4 w-4 text-green-800" /> Users & permissions
+        </h2>
+        <button
+          onClick={() => setShowCreate((v) => !v)}
+          className="flex items-center gap-1 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950"
+        >
+          <Plus className="h-3.5 w-3.5" /> New user
+        </button>
+      </div>
+
+      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+
+      {showCreate && (
+        <CreateUserForm
+          catalog={catalog}
+          onCreated={() => {
+            setShowCreate(false);
+            refresh();
+          }}
+        />
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+              <th className="py-2 pr-3">Username</th>
+              <th className="py-2 pr-3">Permissions</th>
+              <th className="py-2 pr-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-b border-slate-100 align-top">
+                <td className="py-2 pr-3 font-semibold text-slate-800">{u.username}</td>
+                <td className="py-2 pr-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {catalog.map((p) => (
+                      <button
+                        key={p.key}
+                        title={p.description}
+                        onClick={() => togglePermission(u, p.key)}
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 transition ${
+                          u.permissions.includes(p.key)
+                            ? "bg-green-100 text-green-800 ring-green-300"
+                            : "bg-white text-slate-400 ring-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </td>
+                <td className="py-2 pr-3 text-right">
+                  <button onClick={() => removeUser(u)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function CreateUserForm({ catalog, onCreated }: { catalog: Permission[]; onCreated: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function toggle(key: string) {
+    setPermissions((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await createAdminUser(username, password, permissions);
+      onCreated();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex gap-2">
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-green-600"
+        />
+        <input
+          placeholder="Password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-green-600"
+        />
+      </div>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {catalog.map((p) => (
+          <button
+            type="button"
+            key={p.key}
+            title={p.description}
+            onClick={() => toggle(p.key)}
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 transition ${
+              permissions.includes(p.key) ? "bg-green-100 text-green-800 ring-green-300" : "bg-white text-slate-400 ring-slate-200"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+      <button
+        disabled={busy || !username || !password}
+        className="flex items-center gap-1.5 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950 disabled:opacity-50"
+      >
+        {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+        Create user
+      </button>
+    </form>
+  );
+}
