@@ -8,6 +8,7 @@ const PERMISSIONS: { key: string; label: string; description: string }[] = [
   { key: "toggle_layer_wards", label: "Toggle ward/LGA layer", description: "Show or hide ward and LGA boundary outlines on the public map" },
   { key: "toggle_layer_buildings", label: "Toggle buildings layer", description: "Show or hide building footprints on the public map" },
   { key: "toggle_layer_settlements", label: "Toggle settlement blocks layer", description: "Show or hide GRID3 settlement density blocks on the public map" },
+  { key: "manage_api_clients", label: "Manage API clients", description: "Issue and revoke API keys for 3rd-party address verification access" },
 ];
 // add_buildings was removed from here — tracing a building now only requires being logged in (requireAuth),
 // not a specific granted permission; see the cleanup DELETE below for existing installs

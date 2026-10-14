@@ -5,6 +5,8 @@ import bcrypt from "bcryptjs";
 import { pool } from "./db.js";
 import { attachUser, requireAuth, requirePermission, signToken, setSessionCookie, clearSessionCookie } from "./auth.js";
 import { generateBuildingCode } from "./buildingId.js";
+import { requireApiKey, generateApiKey, hashApiKey } from "./apiKeyAuth.js";
+import { verifyAddress } from "./verifyAddress.js";
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
@@ -501,6 +503,42 @@ app.get("/api/boundaries", async (req, res) => {
   }
 });
 
+// ---- 3rd-party verification API (API-key auth, separate from the admin session cookie above) ----
+
+app.post("/api/v1/verify-address", requireApiKey, async (req, res) => {
+  const body = req.body ?? {};
+  const requestRef = typeof body.requestRef === "string" ? body.requestRef.trim() : "";
+  if (!requestRef) return res.status(400).json({ error: "requestRef is required" });
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const num = (v: unknown) => {
+    const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  };
+  try {
+    const result = await verifyAddress(
+      {
+        requestRef,
+        firstName: str(body.firstName),
+        lastName: str(body.lastName),
+        middleName: str(body.middleName),
+        dateOfBirth: str(body.dateOfBirth),
+        email: str(body.email),
+        phoneNumber: str(body.phoneNumber),
+        addressDescriptive: str(body.addressDescriptive),
+        landmark: str(body.landmark),
+        state: str(body.state),
+        lga: str(body.lga),
+        latitude: num(body.latitude),
+        longitude: num(body.longitude),
+      },
+      req.apiClient!.id
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- auth ----
 
 app.post("/api/auth/login", async (req, res) => {
@@ -611,6 +649,72 @@ app.delete("/api/admin/users/:id", requirePermission("manage_users"), async (req
     await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
     res.json({ ok: true });
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- admin: 3rd-party API client management (requires manage_api_clients) ----
+// these are the credentials 3rd parties use against POST /api/v1/verify-address — a separate trust boundary
+// from the users/permissions above, which govern the admin UI itself
+
+app.get("/api/admin/api-clients", requirePermission("manage_api_clients"), async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, active, created_at, last_used_at FROM api_clients ORDER BY created_at DESC`
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/api-clients", requirePermission("manage_api_clients"), async (req, res) => {
+  const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 200) : "";
+  if (!name) return res.status(400).json({ error: "name is required" });
+  try {
+    const rawKey = generateApiKey();
+    const { rows } = await pool.query(
+      `INSERT INTO api_clients (name, key_hash, active, created_at) VALUES ($1, $2, true, now())
+       RETURNING id, name, active, created_at, last_used_at`,
+      [name, hashApiKey(rawKey)]
+    );
+    // apiKey is returned exactly once, right here — only its hash is ever persisted, so this response is the
+    // only chance anyone (including us) gets to see the raw key again
+    res.status(201).json({ ...rows[0], apiKey: rawKey });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/admin/api-clients/:id/active", requirePermission("manage_api_clients"), async (req, res) => {
+  const id = Number(req.params.id);
+  const { active } = req.body ?? {};
+  if (!Number.isInteger(id) || typeof active !== "boolean") return res.status(400).json({ error: "active (boolean) is required" });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE api_clients SET active = $1 WHERE id = $2 RETURNING id, name, active, created_at, last_used_at`,
+      [active, id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "API client not found" });
+    res.json(rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/api-clients/:id", requirePermission("manage_api_clients"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    await pool.query(`DELETE FROM api_clients WHERE id = $1`, [id]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    // a client with any verification_requests history can't be hard-deleted (FK restrict) — that history is the
+    // compliance audit trail this API exists for, so losing it (or silently orphaning it) isn't acceptable;
+    // revoking still blocks the key immediately while keeping the record that this client existed
+    if (err.code === "23503") {
+      return res.status(409).json({ error: "This client has existing verification history and can't be deleted — revoke it instead to block further use while preserving the audit trail." });
+    }
     res.status(500).json({ error: err.message });
   }
 });

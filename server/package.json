@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env.local src/index.ts",
     "build": "tsc -b",
-    "start": "node --env-file=.env.local dist/index.js"
+    "start": "node --env-file=.env.local dist/index.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs --env production",
+    "pm2:reload": "pm2 reload ecosystem.config.cjs --env production",
+    "pm2:stop": "pm2 stop ecosystem.config.cjs",
+    "pm2:logs": "pm2 logs groundtruth-server"
   },
   "dependencies": {
     "@types/better-sqlite3": "^9.6.0",
