@@ -282,6 +282,32 @@ export const updateUserPermissions = (userId: number, permissions: string[]): Pr
 export const deleteAdminUser = (userId: number): Promise<{ ok: true }> =>
   authJson(`${LOCAL_API_BASE}/api/admin/users/${userId}`, { method: "DELETE" });
 
+// ---- admin: 3rd-party API clients (credentials for POST /api/v1/verify-address) ----
+
+export interface ApiClient {
+  id: number;
+  name: string;
+  active: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+export const fetchApiClients = (): Promise<ApiClient[]> => authJson(`${LOCAL_API_BASE}/api/admin/api-clients`);
+// the returned apiKey is shown exactly once — the server never stores or returns the raw key again after this call
+export const createApiClient = (name: string): Promise<ApiClient & { apiKey: string }> =>
+  authJson(`${LOCAL_API_BASE}/api/admin/api-clients`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+export const setApiClientActive = (id: number, active: boolean): Promise<ApiClient> =>
+  authJson(`${LOCAL_API_BASE}/api/admin/api-clients/${id}/active`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active }),
+  });
+export const deleteApiClient = (id: number): Promise<{ ok: true }> =>
+  authJson(`${LOCAL_API_BASE}/api/admin/api-clients/${id}`, { method: "DELETE" });
+
 export const fetchMapSettings = (): Promise<MapSettings> => getJson(`${LOCAL_API_BASE}/api/map-settings`);
 export const updateMapSettings = (patch: Partial<MapSettings>): Promise<MapSettings> =>
   authJson(`${LOCAL_API_BASE}/api/admin/map-settings`, {

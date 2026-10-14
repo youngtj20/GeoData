@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { LoaderCircle, LogOut, ShieldCheck, Map as MapIcon, Users as UsersIcon, Trash2, Plus, Check } from "lucide-react";
+import { LoaderCircle, LogOut, ShieldCheck, Map as MapIcon, Users as UsersIcon, Trash2, Plus, Check, KeyRound, Copy } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 import {
   fetchMapSettings,
@@ -10,9 +10,14 @@ import {
   createAdminUser,
   updateUserPermissions,
   deleteAdminUser,
+  fetchApiClients,
+  createApiClient,
+  setApiClientActive,
+  deleteApiClient,
   type MapSettings,
   type Permission,
   type AdminUser,
+  type ApiClient,
 } from "../lib/api";
 
 export default function AdminPage() {
@@ -54,6 +59,13 @@ export default function AdminPage() {
         {!hasPermission("manage_users") && (
           <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
             You don't have the <code className="rounded bg-slate-100 px-1">manage_users</code> permission, so user management is hidden.
+          </p>
+        )}
+        {hasPermission("manage_api_clients") && <ApiClientsPanel />}
+        {!hasPermission("manage_api_clients") && (
+          <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
+            You don't have the <code className="rounded bg-slate-100 px-1">manage_api_clients</code> permission, so 3rd-party API client
+            management is hidden.
           </p>
         )}
       </main>
@@ -366,6 +378,189 @@ function CreateUserForm({ catalog, onCreated }: { catalog: Permission[]; onCreat
       >
         {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
         Create user
+      </button>
+    </form>
+  );
+}
+
+function ApiClientsPanel() {
+  const [clients, setClients] = useState<ApiClient[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  // shown once, right after creation — the server never returns the raw key again after this
+  const [revealedKey, setRevealedKey] = useState<{ name: string; apiKey: string } | null>(null);
+
+  async function refresh() {
+    try {
+      setClients(await fetchApiClients());
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function toggleActive(c: ApiClient) {
+    setClients((prev) => prev.map((x) => (x.id === c.id ? { ...x, active: !x.active } : x)));
+    try {
+      await setApiClientActive(c.id, !c.active);
+    } catch (e: any) {
+      setError(e.message);
+      refresh();
+    }
+  }
+
+  async function removeClient(c: ApiClient) {
+    if (!confirm(`Revoke and delete API client "${c.name}"? Any 3rd party using this key will immediately lose access.`)) return;
+    try {
+      await deleteApiClient(c.id);
+      setClients((prev) => prev.filter((x) => x.id !== c.id));
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-1 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+          <KeyRound className="h-4 w-4 text-green-800" /> 3rd-party API clients
+        </h2>
+        <button
+          onClick={() => setShowCreate((v) => !v)}
+          className="flex items-center gap-1 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950"
+        >
+          <Plus className="h-3.5 w-3.5" /> New API key
+        </button>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        Keys authenticate requests to <code className="rounded bg-slate-100 px-1">POST /api/v1/verify-address</code> — the address/building
+        existence check used by external integrations.
+      </p>
+
+      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+
+      {showCreate && (
+        <CreateApiClientForm
+          onCreated={(created) => {
+            setShowCreate(false);
+            setRevealedKey({ name: created.name, apiKey: created.apiKey });
+            refresh();
+          }}
+        />
+      )}
+
+      {revealedKey && (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
+          <p className="mb-1.5 text-xs font-bold text-amber-900">API key for "{revealedKey.name}" — copy it now, it won't be shown again:</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg bg-white px-2 py-1.5 text-xs text-slate-800 ring-1 ring-amber-200">
+              {revealedKey.apiKey}
+            </code>
+            <button
+              onClick={() => navigator.clipboard.writeText(revealedKey.apiKey)}
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-amber-950"
+            >
+              <Copy className="h-3.5 w-3.5" /> Copy
+            </button>
+            <button
+              onClick={() => setRevealedKey(null)}
+              className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+              <th className="py-2 pr-3">Name</th>
+              <th className="py-2 pr-3">Status</th>
+              <th className="py-2 pr-3">Created</th>
+              <th className="py-2 pr-3">Last used</th>
+              <th className="py-2 pr-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {clients.map((c) => (
+              <tr key={c.id} className="border-b border-slate-100 align-top">
+                <td className="py-2 pr-3 font-semibold text-slate-800">{c.name}</td>
+                <td className="py-2 pr-3">
+                  <button
+                    onClick={() => toggleActive(c)}
+                    title={c.active ? "Click to revoke" : "Click to reactivate"}
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 transition ${
+                      c.active ? "bg-green-100 text-green-800 ring-green-300" : "bg-slate-100 text-slate-500 ring-slate-300"
+                    }`}
+                  >
+                    {c.active ? "Active" : "Revoked"}
+                  </button>
+                </td>
+                <td className="py-2 pr-3 text-xs text-slate-500">{new Date(c.created_at).toLocaleDateString()}</td>
+                <td className="py-2 pr-3 text-xs text-slate-500">{c.last_used_at ? new Date(c.last_used_at).toLocaleString() : "Never"}</td>
+                <td className="py-2 pr-3 text-right">
+                  <button onClick={() => removeClient(c)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!clients.length && (
+              <tr>
+                <td colSpan={5} className="py-3 text-center text-xs text-slate-400">
+                  No API clients yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function CreateApiClientForm({ onCreated }: { onCreated: (created: ApiClient & { apiKey: string }) => void }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createApiClient(name);
+      onCreated(created);
+      setName("");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex gap-2">
+        <input
+          placeholder="Client name (e.g. NIMC)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-green-600"
+        />
+      </div>
+      {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+      <button
+        disabled={busy || !name.trim()}
+        className="flex items-center gap-1.5 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950 disabled:opacity-50"
+      >
+        {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
+        Generate key
       </button>
     </form>
   );
