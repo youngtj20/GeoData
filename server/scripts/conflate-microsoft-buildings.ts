@@ -12,14 +12,19 @@ async function main() {
   for (const { state } of states) {
     const start = Date.now();
     const res = await pool.query(
+      // ST_MakeValid both sides of the IoU comparison — Microsoft's footprints include at least one
+      // self-intersecting polygon (hit a GEOS "side location conflict" TopologyException on the raw geom
+      // during ST_Intersection/ST_Union without this). Also applied to the geometry actually inserted, so a
+      // repaired-but-still-correct polygon ends up in `buildings` rather than a raw invalid one.
       `INSERT INTO buildings (source, geom, area_in_meters, confidence)
-       SELECT 'microsoft', g.geom, g.area_in_meters, g.confidence
+       SELECT 'microsoft', ST_Multi(ST_CollectionExtract(ST_MakeValid(g.geom), 3)), g.area_in_meters, g.confidence
        FROM microsoft_buildings_staging g
        JOIN state_boundaries sb ON sb.state = $1 AND ST_Intersects(g.geom, sb.geom)
        WHERE NOT EXISTS (
          SELECT 1 FROM buildings b
          WHERE b.geom && g.geom
-           AND ST_Area(ST_Intersection(b.geom, g.geom)) / NULLIF(ST_Area(ST_Union(b.geom, g.geom)), 0) > $2
+           AND ST_Area(ST_Intersection(ST_MakeValid(b.geom), ST_MakeValid(g.geom)))
+               / NULLIF(ST_Area(ST_Union(ST_MakeValid(b.geom), ST_MakeValid(g.geom))), 0) > $2
        )`,
       [state, IOU_THRESHOLD]
     );

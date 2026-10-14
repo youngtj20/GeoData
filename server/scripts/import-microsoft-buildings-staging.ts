@@ -1,4 +1,6 @@
 import zlib from "node:zlib";
+import readline from "node:readline";
+import { Readable } from "node:stream";
 import { pool } from "../src/db.js";
 
 // Microsoft's Global ML Building Footprints — unlike the GRID3/Google imports (.gpkg files, loaded from a
@@ -9,6 +11,25 @@ import { pool } from "../src/db.js";
 const MANIFEST_URL = "https://bfppub.blob.core.windows.net/$web/2026-08-13/dataset-links.csv";
 const REGION = "Nigeria";
 const BATCH_SIZE = 2000;
+
+// the first run (before this file tracked `quadkey` per row) staged these 89 tiles successfully before a
+// larger tile further down the list overflowed Node's max string length — see the streaming fix below. Those
+// rows are already in the table with quadkey = NULL, so they can't be found by the normal
+// "already staged" query; list them explicitly so a re-run doesn't redownload/reprocess 13M+ rows.
+const ALREADY_STAGED_WITHOUT_QUADKEY = new Set([
+  "122202301", "122202303", "122202310", "122202311", "122202312", "122202313", "122202321", "122202322",
+  "122202323", "122202330", "122202331", "122202332", "122202333", "122203200", "122203201", "122203202",
+  "122203203", "122203210", "122203211", "122203212", "122203213", "122203220", "122203221", "122203222",
+  "122203223", "122203230", "122203231", "122203232", "122203233", "122203302", "122203303", "122203310",
+  "122203311", "122203312", "122203313", "122203320", "122203321", "122203322", "122203323", "122203330",
+  "122203331", "122203332", "122203333", "122212200", "122212201", "122212202", "122212203", "122212210",
+  "122212211", "122212212", "122212213", "122212220", "122212221", "122212222", "122212223", "122212230",
+  "122212231", "122212232", "122212233", "122212302", "122212320", "122212322", "122220033", "122220101",
+  "122220102", "122220103", "122220110", "122220111", "122220112", "122220113", "122220120", "122220121",
+  "122220122", "122220123", "122220130", "122220131", "122220132", "122220133", "122220211", "122220213",
+  "122220231", "122220300", "122220301", "122220302", "122220303", "122220310", "122220311", "122220312",
+  "122220313",
+]);
 
 interface TileRef {
   quadkey: string;
@@ -34,11 +55,13 @@ async function ensureStagingTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS microsoft_buildings_staging (
       id BIGSERIAL PRIMARY KEY,
+      quadkey TEXT,
       height DOUBLE PRECISION,
       confidence DOUBLE PRECISION,
       area_in_meters DOUBLE PRECISION,
       geom GEOMETRY(MultiPolygon, 4326)
     );
+    ALTER TABLE microsoft_buildings_staging ADD COLUMN IF NOT EXISTS quadkey TEXT;
   `);
 }
 
@@ -48,34 +71,40 @@ interface StagedRow {
   geojson: string;
 }
 
-async function insertBatch(rows: StagedRow[]): Promise<number> {
+async function insertBatch(quadkey: string, rows: StagedRow[]): Promise<number> {
   if (!rows.length) return 0;
   const valuesSql: string[] = [];
   const params: any[] = [];
   let p = 1;
   for (const r of rows) {
-    const gi = p + 2;
+    const gi = p + 3;
     const g = `ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($${gi}), 4326))`;
-    valuesSql.push(`($${p}, $${p + 1}, ST_Area(${g}::geography), ${g})`);
-    params.push(r.height, r.confidence, r.geojson);
-    p += 3;
+    valuesSql.push(`($${p}, $${p + 1}, $${p + 2}, ST_Area(${g}::geography), ${g})`);
+    params.push(quadkey, r.height, r.confidence, r.geojson);
+    p += 4;
   }
   const res = await pool.query(
-    `INSERT INTO microsoft_buildings_staging (height, confidence, area_in_meters, geom) VALUES ${valuesSql.join(",")}`,
+    `INSERT INTO microsoft_buildings_staging (quadkey, height, confidence, area_in_meters, geom) VALUES ${valuesSql.join(",")}`,
     params
   );
   return res.rowCount ?? 0;
 }
 
+// streams the decompressed tile line-by-line via readline, rather than materializing the whole decompressed
+// payload as one JS string (zlib.gunzipSync(buf).toString() crashed on a large tile with
+// "Cannot create a string longer than 0x1fffffe8 characters" — Node/V8's hard string-length ceiling,
+// ~512MB of UTF-16 chars. readline reads the gunzip stream in chunks and only ever holds one line at a time.
 async function processTile(tile: TileRef): Promise<{ scanned: number; inserted: number; skipped: number }> {
   const res = await fetch(tile.url);
   if (!res.ok) throw new Error(`tile fetch failed (${res.status}): ${tile.url}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  const text = zlib.gunzipSync(buf).toString("utf-8");
+
+  const gunzip = zlib.createGunzip();
+  const rl = readline.createInterface({ input: Readable.from(buf).pipe(gunzip), crlfDelay: Infinity });
 
   let batch: StagedRow[] = [];
   let scanned = 0, inserted = 0, skipped = 0;
-  for (const line of text.split("\n")) {
+  for await (const line of rl) {
     if (!line.trim()) continue;
     scanned++;
     let feature: any;
@@ -96,36 +125,43 @@ async function processTile(tile: TileRef): Promise<{ scanned: number; inserted: 
       geojson: JSON.stringify(geom),
     });
     if (batch.length >= BATCH_SIZE) {
-      inserted += await insertBatch(batch);
+      inserted += await insertBatch(tile.quadkey, batch);
       batch = [];
     }
   }
-  inserted += await insertBatch(batch);
+  inserted += await insertBatch(tile.quadkey, batch);
   return { scanned, inserted, skipped };
 }
 
 async function main() {
   await ensureStagingTable();
   let tiles = await fetchNigeriaTiles();
+
   const limit = Number(process.argv[2]);
   if (Number.isInteger(limit) && limit > 0) tiles = tiles.slice(0, limit); // for a quick validation run
-  console.log(`${tiles.length} Nigeria tiles to import.`);
+
+  const { rows: doneRows } = await pool.query(
+    `SELECT DISTINCT quadkey FROM microsoft_buildings_staging WHERE quadkey IS NOT NULL`
+  );
+  const alreadyDone = new Set([...doneRows.map((r) => r.quadkey as string), ...ALREADY_STAGED_WITHOUT_QUADKEY]);
+  const remaining = tiles.filter((t) => !alreadyDone.has(t.quadkey));
+  console.log(`${tiles.length} Nigeria tiles total, ${alreadyDone.size} already staged, ${remaining.length} remaining.`);
 
   let totalScanned = 0, totalInserted = 0, totalSkipped = 0;
   const start = Date.now();
-  for (let i = 0; i < tiles.length; i++) {
-    const tile = tiles[i];
+  for (let i = 0; i < remaining.length; i++) {
+    const tile = remaining[i];
     const { scanned, inserted, skipped } = await processTile(tile);
     totalScanned += scanned;
     totalInserted += inserted;
     totalSkipped += skipped;
     const secs = (Date.now() - start) / 1000;
     console.log(
-      `[${i + 1}/${tiles.length}] quadkey=${tile.quadkey} scanned=${scanned} inserted=${inserted} skipped=${skipped} ` +
-      `— totals: ${totalInserted} inserted, ${totalScanned} scanned — ${secs.toFixed(0)}s elapsed`
+      `[${i + 1}/${remaining.length}] quadkey=${tile.quadkey} scanned=${scanned} inserted=${inserted} skipped=${skipped} ` +
+      `— run totals: ${totalInserted} inserted, ${totalScanned} scanned — ${secs.toFixed(0)}s elapsed`
     );
   }
-  console.log(`Done. ${totalInserted} rows staged (${totalSkipped} malformed/non-polygon rows skipped) in ${((Date.now() - start) / 1000).toFixed(0)}s.`);
+  console.log(`Done. ${totalInserted} rows staged this run (${totalSkipped} malformed/non-polygon rows skipped) in ${((Date.now() - start) / 1000).toFixed(0)}s.`);
   await pool.end();
 }
 
