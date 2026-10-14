@@ -22,5 +22,10 @@ export default defineConfig(async ({ mode }) => {
     plugins,
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     define: processEnvDefines,
+    preview: {
+      // `vite preview` rejects requests whose Host header it doesn't recognize (DNS-rebinding protection) —
+      // needed once this is reached through the production domain rather than localhost/127.0.0.1
+      allowedHosts: ['geodata.mva.ng'],
+    },
   };
 })
