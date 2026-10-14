@@ -26,7 +26,11 @@ export function signToken(userId: number): string {
 export function setSessionCookie(res: Response, token: string) {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "lax",
+    // "none" (not "lax") so the cookie survives cross-site fetches — needed when the frontend and this API
+    // are reached through different domains, not just different subdomains/ports of the same site. Requires
+    // `secure: true` (browsers silently drop SameSite=None cookies without it), which is why this can only be
+    // "none" when NODE_ENV=production — local HTTP dev would just have the browser reject the cookie entirely.
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     secure: process.env.NODE_ENV === "production",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
