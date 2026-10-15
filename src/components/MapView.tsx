@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "../lib/googleMaps";
 import { LANDMARK_STYLES } from "../lib/landmarkStyles";
+import { escapeHtml, POPUP_ICON, PIN_ICON_PATH, BUILDING_ICON_PATH, popupCard, landmarkPopup } from "../lib/popupCard";
 
 const NIGERIA_CENTER = { lat: 9.082, lng: 8.6753 };
 // below this zoom, an Overpass query would cover too much area — buildings are hidden and a hint shown instead
@@ -19,9 +20,6 @@ function featureLatLon(f: any): { lat: number; lon: number } {
   let sx = 0, sy = 0;
   for (const p of ring) { sx += p[0]; sy += p[1]; }
   return { lon: sx / ring.length, lat: sy / ring.length };
-}
-function escapeHtml(s: string) {
-  return s.replace(/</g, "&lt;");
 }
 function boundsFromData(data: google.maps.Data): google.maps.LatLngBounds | null {
   const bounds = new google.maps.LatLngBounds();
@@ -191,9 +189,7 @@ export default function MapView({
             return;
           }
           const info = landmarkInfoRef.current!;
-          info.setContent(
-            `<div style="min-width:160px"><div style="font-weight:900;font-size:13px;color:#1c1917">${escapeHtml(String(p.name || "Unnamed"))}</div><div style="font-size:11px;color:#57534e;margin-top:2px">${escapeHtml(String(p.ward || ""))}${p.lga ? ", " + escapeHtml(String(p.lga)) : ""}</div></div>`
-          );
+          info.setContent(landmarkPopup(p));
           info.setPosition(e.latLng);
           info.open(map);
           // most landmarks already render as a real building (has_building) from the precomputed match — only
@@ -498,7 +494,9 @@ export default function MapView({
       } as google.maps.Symbol,
       zIndex: 500,
     });
-    const info = new google.maps.InfoWindow({ content: escapeHtml(marker.label) });
+    const info = new google.maps.InfoWindow({
+      content: popupCard({ title: escapeHtml(marker.label), icon: POPUP_ICON(PIN_ICON_PATH), accent: "#b45309", pill: "Location" }),
+    });
     info.open(map, m);
     markerRef.current = m;
     markerInfoRef.current = info;
@@ -519,7 +517,16 @@ export default function MapView({
       zIndex: 900,
     });
     const info = new google.maps.InfoWindow({
-      content: `<div style="min-width:190px"><div style="font-weight:900;font-size:13px;color:#1c1917">${escapeHtml(String(buildingPick.label))}</div><div style="font-size:11px;color:#57534e;margin-top:3px;font-family:ui-monospace,monospace">${buildingPick.lat.toFixed(6)}, ${buildingPick.lon.toFixed(6)}</div><div style="font-size:11px;color:#15803d;margin-top:4px;font-weight:700">Building coordinate · WGS84</div></div>`,
+      content: popupCard({
+        title: buildingPick.buildingCode
+          ? `<span class="cc-pop-kicker">Building ID:</span><span class="cc-pop-code">${escapeHtml(String(buildingPick.buildingCode))}</span>`
+          : escapeHtml(String(buildingPick.label)),
+        icon: POPUP_ICON(BUILDING_ICON_PATH),
+        accent: "#15803d",
+        footerCenter: true,
+        mono: `${buildingPick.lat.toFixed(6)}, ${buildingPick.lon.toFixed(6)}`,
+        badge: "WGS84",
+      }),
     });
     info.open(map, m);
     pickMarkerRef.current = m;

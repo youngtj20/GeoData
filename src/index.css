@@ -20,6 +20,28 @@
   border-bottom-color: #fff !important;
 }
 
+/* Google Maps InfoWindow chrome, stripped down to match the same floating white card look as the Mapbox
+   popups above — the .cc-pop* card markup itself is shared between both map providers (src/lib/popupCard.ts),
+   this just removes Google's own default padding/shadow/rounded-corner wrapper so it doesn't double up. */
+.gm-style .gm-style-iw-c {
+  padding: 0;
+  border-radius: 14px;
+  box-shadow:
+    0 12px 30px -10px rgba(15, 23, 42, 0.3),
+    0 2px 8px -3px rgba(15, 23, 42, 0.16);
+}
+.gm-style .gm-style-iw-d {
+  overflow: hidden !important;
+  padding: 0;
+}
+.gm-style .gm-style-iw-tc::after {
+  background: #fff;
+}
+.gm-style button.gm-ui-hover-effect {
+  top: 4px !important;
+  right: 4px !important;
+}
+
 .cc-pop {
   min-width: 184px;
   background: #fff;
