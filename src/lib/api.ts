@@ -194,6 +194,10 @@ export function fetchNearestBuilding(lat: number, lon: number, radiusM = 40): Pr
   const sp = new URLSearchParams({ lat: String(lat), lon: String(lon), radius: String(radiusM) });
   return getJson(`${LOCAL_API_BASE}/api/buildings/nearest?${sp.toString()}`);
 }
+// direct lookup by the human-readable building_code (e.g. "LA-IK-10-0221") printed on a building ID card
+export function fetchBuildingByCode(code: string): Promise<NearestBuildingResponse> {
+  return getJson(`${LOCAL_API_BASE}/api/buildings/by-code/${encodeURIComponent(code)}`);
+}
 // GRID3 settlement density blocks visible in a map viewport (admin-toggleable layer)
 export function fetchSettlementBlocksInBounds(b: { south: number; west: number; north: number; east: number }): Promise<GeoJSON.FeatureCollection> {
   const sp = new URLSearchParams({ south: String(b.south), west: String(b.west), north: String(b.north), east: String(b.east) });

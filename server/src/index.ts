@@ -200,6 +200,24 @@ app.get("/api/buildings/nearest", async (req, res) => {
   }
 });
 
+// direct lookup by the human-readable building_code (e.g. "LA-IK-10-0221") — case-insensitive since it's
+// meant to be typed/read off a printed card, not copy-pasted exactly
+app.get("/api/buildings/by-code/:code", async (req, res) => {
+  const code = req.params.code.trim();
+  if (!code) return res.status(400).json({ error: "building code required" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, source, osm_type, osm_id, fclass, name, btype, address, building_code, ST_AsGeoJSON(geom) AS geojson
+       FROM buildings WHERE upper(building_code) = upper($1) LIMIT 1`,
+      [code]
+    );
+    if (!rows.length) return res.json({ found: false });
+    res.json({ found: true, building: buildingFeature(rows[0]) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const LANDMARK_CATEGORIES = new Set(["school", "mosque", "church", "market", "health_facility"]);
 const LANDMARKS_LIMIT = 2000;
 // below this zoom, individual points are clustered into grid cells instead of returned raw — at nationwide/city

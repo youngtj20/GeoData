@@ -55,6 +55,7 @@ import {
   reverseGeocode,
   updateBuildingAddress,
   fetchNearestBuilding,
+  fetchBuildingByCode,
 } from "./lib/api";
 import { LANDMARK_STYLES, LANDMARK_CATEGORY_ORDER } from "./lib/landmarkStyles";
 import { useAuth } from "./lib/AuthContext";
@@ -254,11 +255,16 @@ export default function App() {
 
   const [busyLGAs, setBusyLGAs] = useState(false);
 
+  const [legendOpen, setLegendOpen] = useState(true);
+
   // building-in-ward selection — auto-enabled once a ward is chosen so the map stays browsable before that
   const [buildingMode, setBuildingMode] = useState(false);
   const [buildings, setBuildings] = useState<GeoJSON.FeatureCollection | null>(null);
   const [buildingPick, setBuildingPick] = useState<{ id: string; lat: number; lon: number; label: string; address?: string | null; buildingCode?: string | null; rawId?: number | null } | null>(null);
   const [buildingsLoading, setBuildingsLoading] = useState(false);
+  const [buildingCodeQuery, setBuildingCodeQuery] = useState("");
+  const [buildingCodeSearching, setBuildingCodeSearching] = useState(false);
+  const [buildingCodeError, setBuildingCodeError] = useState<string | null>(null);
   const [buildingsError, setBuildingsError] = useState<string | null>(null);
   const [coordCopied, setCoordCopied] = useState<"" | "coord" | "dms" | "geojson" | "code">("");
   // set after a search/click resolve; consumed once the ward's buildings finish loading to auto-select the nearest footprint
@@ -710,6 +716,32 @@ export default function App() {
     // keep existing address if it already looks like a building label
   };
 
+  const doBuildingCodeSearch = async () => {
+    const code = buildingCodeQuery.trim();
+    if (!code) return;
+    setBuildingCodeSearching(true);
+    setBuildingCodeError(null);
+    try {
+      const res = await fetchBuildingByCode(code);
+      if (!res.found || !res.building) {
+        setBuildingCodeError(`No building found with ID "${code}".`);
+        return;
+      }
+      const f = res.building as any;
+      const { lat, lon } = featureLatLon(f);
+      // fold it into the loaded footprints too, so it renders highlighted on the map like any other pick
+      setBuildings((prev) =>
+        prev ? { ...prev, features: [...prev.features, f] } : { type: "FeatureCollection", features: [f] }
+      );
+      handleBuildingPick({ id: f.properties.__id, lat, lon, label: f.properties.label }, f);
+      setBuildingMode(true);
+    } catch {
+      setBuildingCodeError("Something went wrong looking that up — try again.");
+    } finally {
+      setBuildingCodeSearching(false);
+    }
+  };
+
   // the server assigns a permanent building_code (STATE-LGA-WARD-SEQ) to every real building row at creation
   // time — it never changes as more buildings are added, unlike a live-recomputed position-in-list would. The
   // PT- fallback only applies to a raw point tap with no underlying building footprint at all.
@@ -881,7 +913,7 @@ export default function App() {
             to="/admin"
             className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
           >
-            <ShieldCheck className="h-3.5 w-3.5" /> Admin
+            <ShieldCheck className="h-3.5 w-3.5" /> Login
           </Link>
         </div>
       </header>
@@ -916,6 +948,42 @@ export default function App() {
                 </motion.p>
               )}
             </AnimatePresence>
+          </section>
+
+          {/* search by building ID */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-500">
+              <Building2 className="h-4 w-4 text-green-700" /> Find a building by ID
+            </h2>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                doBuildingCodeSearch();
+              }}
+              className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 shadow-sm transition focus-within:border-green-700 focus-within:ring-2 focus-within:ring-green-700/20"
+            >
+              <Search className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                value={buildingCodeQuery}
+                onChange={(e) => setBuildingCodeQuery(e.target.value)}
+                placeholder="Building ID — e.g. LA-IK-10-0221"
+                className="w-full bg-transparent text-sm uppercase outline-none placeholder:normal-case placeholder:text-slate-400"
+                aria-label="Search building ID"
+              />
+              {buildingCodeSearching ? (
+                <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-green-700" />
+              ) : buildingCodeQuery ? (
+                <button
+                  type="button"
+                  onClick={() => { setBuildingCodeQuery(""); setBuildingCodeError(null); }}
+                  aria-label="Clear"
+                  className="shrink-0 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </form>
+            {buildingCodeError && <p className="mt-2 text-xs font-semibold text-red-700">{buildingCodeError}</p>}
           </section>
 
           {/* landmarks filter */}
@@ -1567,30 +1635,48 @@ export default function App() {
             </div>
 
             {/* legend */}
-            <div className="absolute bottom-4 left-4 z-[400] rounded-2xl bg-white/95 p-3 text-xs shadow-xl ring-1 ring-slate-200 backdrop-blur">
-              <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Legend</p>
-              <div className="space-y-1.5 font-medium">
-                <p className="flex items-center gap-2">
-                  <span className="inline-block h-3.5 w-3.5 rounded border border-green-700 bg-green-500/20" /> Ward / LGA boundary
-                </p>
-                <p className="flex items-center gap-2">
-                  <span className="inline-block h-3.5 w-3.5 rounded border border-amber-700 bg-amber-500/35" /> Selected ward
-                </p>
-                <p className="flex items-center gap-2">
-                  <span className="inline-block h-3.5 w-3.5 rounded border border-slate-800 bg-amber-500/40" /> Building footprint
-                </p>
-                <p className="flex items-center gap-2">
-                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-green-800/40" /> Selected building
-                </p>
-                <p className="flex items-center gap-2">
-                  <span className="inline-block h-0.5 w-5 border-t-2 border-dashed border-green-800" /> State / LGA outline
-                </p>
+            {legendOpen ? (
+              <div className="absolute bottom-4 left-4 z-[400] rounded-2xl bg-white/95 p-3 text-xs shadow-xl ring-1 ring-slate-200 backdrop-blur">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">Legend</p>
+                  <button
+                    onClick={() => setLegendOpen(false)}
+                    aria-label="Close legend"
+                    className="-m-1 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="space-y-1.5 font-medium">
+                  <p className="flex items-center gap-2">
+                    <span className="inline-block h-3.5 w-3.5 rounded border border-green-700 bg-green-500/20" /> Ward / LGA boundary
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <span className="inline-block h-3.5 w-3.5 rounded border border-amber-700 bg-amber-500/35" /> Selected ward
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <span className="inline-block h-3.5 w-3.5 rounded border border-slate-800 bg-amber-500/40" /> Building footprint
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-green-800/40" /> Selected building
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <span className="inline-block h-0.5 w-5 border-t-2 border-dashed border-green-800" /> State / LGA outline
+                  </p>
+                </div>
+                <div className="mt-2.5 flex gap-1.5">
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200">Nominatim</span>
+                </div>
               </div>
-              <div className="mt-2.5 flex gap-1.5">
-                <span className="rounded-full bg-green-800 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white">GRID3</span>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200">Nominatim</span>
-              </div>
-            </div>
+            ) : (
+              <button
+                onClick={() => setLegendOpen(true)}
+                aria-label="Show legend"
+                className="absolute bottom-4 left-4 z-[400] inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-2 text-xs font-bold text-slate-600 shadow-xl ring-1 ring-slate-200 backdrop-blur hover:bg-white"
+              >
+                <Layers className="h-3.5 w-3.5 text-green-700" /> Legend
+              </button>
+            )}
 
             {/* mobile hint */}
             <div className="absolute left-3 right-3 top-3 z-[400] rounded-xl bg-white/95 px-3 py-2 text-center text-xs font-semibold text-slate-700 shadow-lg ring-1 ring-slate-200 sm:hidden">
