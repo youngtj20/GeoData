@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { LoaderCircle, LogOut, ShieldCheck, Map as MapIcon, Users as UsersIcon, Trash2, Plus, Check, KeyRound, Copy } from "lucide-react";
+import { LoaderCircle, LogOut, ShieldCheck, Map as MapIcon, Users as UsersIcon, Trash2, Plus, Check, KeyRound, Copy, Lock, ArrowUpRight } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 import {
   fetchMapSettings,
@@ -32,17 +32,26 @@ export default function AdminPage() {
   }
   if (!user) return <Navigate to="/login" replace />;
 
+  const initial = user.username.slice(0, 1).toUpperCase();
+
   return (
     <div className="min-h-screen bg-stone-100">
       <header className="sticky top-0 z-10 border-b border-black/10 bg-gradient-to-r from-green-950 via-green-900 to-emerald-900 text-white shadow-sm">
-        <div className="mx-auto flex max-w-[1100px] items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-[1100px] items-center gap-3 px-4 py-3.5">
           <img src="/algon-seal.png" alt="ALGON seal" className="h-9 w-9 shrink-0 rounded-full bg-white shadow" />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-black leading-tight">Admin — ALGON POA SYSTEM</h1>
-            <p className="truncate text-xs text-emerald-100/90">Signed in as {user.username}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300/80">Admin console</p>
+            <h1 className="truncate text-base font-black leading-tight">ALGON POA SYSTEM</h1>
           </div>
-          <Link to="/" className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20">
-            View public map
+          <div className="hidden items-center gap-2 rounded-full bg-white/10 py-1 pl-1 pr-3 text-xs font-bold ring-1 ring-white/15 sm:flex">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-[11px] font-black text-green-950">{initial}</span>
+            {user.username}
+          </div>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold ring-1 ring-white/15 hover:bg-white/20"
+          >
+            View public map <ArrowUpRight className="h-3 w-3" />
           </Link>
           <button
             onClick={() => logout()}
@@ -53,23 +62,73 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-[1100px] flex-col gap-5 p-4">
+      <main className="mx-auto flex max-w-[1100px] flex-col gap-5 p-4 pb-16 pt-5">
         <MapSettingsPanel hasPermission={hasPermission} />
-        {hasPermission("manage_users") && <UsersPanel />}
-        {!hasPermission("manage_users") && (
-          <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-            You don't have the <code className="rounded bg-slate-100 px-1">manage_users</code> permission, so user management is hidden.
-          </p>
+        {hasPermission("manage_users") ? (
+          <UsersPanel />
+        ) : (
+          <RestrictedSection permission="manage_users" what="user management" />
         )}
-        {hasPermission("manage_api_clients") && <ApiClientsPanel />}
-        {!hasPermission("manage_api_clients") && (
-          <p className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-            You don't have the <code className="rounded bg-slate-100 px-1">manage_api_clients</code> permission, so 3rd-party API client
-            management is hidden.
-          </p>
+        {hasPermission("manage_api_clients") ? (
+          <ApiClientsPanel />
+        ) : (
+          <RestrictedSection permission="manage_api_clients" what="3rd-party API client management" />
         )}
       </main>
     </div>
+  );
+}
+
+function RestrictedSection({ permission, what }: { permission: string; what: string }) {
+  return (
+    <section className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white/50 p-7 text-center">
+      <Lock className="h-5 w-5 text-slate-300" />
+      <p className="text-sm font-bold text-slate-500">Restricted</p>
+      <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+        You don't have the <code className="rounded bg-slate-100 px-1 py-0.5 text-slate-500">{permission}</code> permission, so {what} is hidden.
+        Ask another admin with <span className="font-semibold text-slate-500">Manage users</span> to grant it.
+      </p>
+    </section>
+  );
+}
+
+function SectionHeader({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  description?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700 ring-1 ring-green-100">{icon}</div>
+        <div>
+          <h2 className="text-sm font-black text-slate-800">{title}</h2>
+          {description && <p className="mt-0.5 max-w-md text-xs leading-snug text-slate-500">{description}</p>}
+        </div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return <p className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-700 ring-1 ring-red-200">{message}</p>;
+}
+
+function PrimaryButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-green-900 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-green-950 active:scale-[0.98]"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -107,25 +166,23 @@ function MapSettingsPanel({ hasPermission }: { hasPermission: (key: string) => b
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-        <MapIcon className="h-4 w-4 text-green-800" /> Public map settings
-      </h2>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <SectionHeader icon={<MapIcon className="h-4.5 w-4.5" />} title="Public map settings" description="Controls what every visitor sees on the live map — no login required to view." />
 
       {!settings && !error && <LoaderCircle className="h-4 w-4 animate-spin text-slate-400" />}
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+      {error && <ErrorBanner message={error} />}
 
       {settings && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <div>
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Map provider</p>
+            <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">Map provider</p>
             <div className="flex gap-2">
               {(["google", "mapbox", "osm"] as const).map((p) => (
                 <button
                   key={p}
                   disabled={!canProvider}
                   onClick={() => save({ provider: p })}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold capitalize ring-1 transition ${
+                  className={`rounded-xl px-3.5 py-2 text-xs font-bold capitalize ring-1 transition ${
                     settings.provider === p
                       ? "bg-green-900 text-white ring-green-900"
                       : "bg-white text-slate-600 ring-slate-300 hover:bg-slate-50"
@@ -135,24 +192,18 @@ function MapSettingsPanel({ hasPermission }: { hasPermission: (key: string) => b
                 </button>
               ))}
             </div>
-            {!canProvider && <p className="mt-1 text-[11px] text-slate-400">Requires change_map_provider permission.</p>}
+            {!canProvider && (
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                Requires <code className="rounded bg-slate-100 px-1">change_map_provider</code>.
+              </p>
+            )}
           </div>
 
           <div>
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Layers visible on the public map</p>
-            <div className="flex flex-col gap-2">
-              <LayerToggle
-                label="Ward / LGA boundaries"
-                checked={settings.show_wards}
-                disabled={!canWards}
-                onChange={(v) => save({ show_wards: v })}
-              />
-              <LayerToggle
-                label="Building footprints"
-                checked={settings.show_buildings}
-                disabled={!canBuildings}
-                onChange={(v) => save({ show_buildings: v })}
-              />
+            <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">Layers visible on the public map</p>
+            <div className="flex flex-col gap-2.5 rounded-xl border border-slate-200 p-3">
+              <LayerToggle label="Ward / LGA boundaries" checked={settings.show_wards} disabled={!canWards} onChange={(v) => save({ show_wards: v })} />
+              <LayerToggle label="Building footprints" checked={settings.show_buildings} disabled={!canBuildings} onChange={(v) => save({ show_buildings: v })} />
               <LayerToggle
                 label="GRID3 settlement density blocks"
                 checked={settings.show_settlements}
@@ -162,7 +213,7 @@ function MapSettingsPanel({ hasPermission }: { hasPermission: (key: string) => b
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex min-h-[18px] items-center gap-2 text-xs">
             {saving && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-slate-400" />}
             {saved && (
               <span className="flex items-center gap-1 font-semibold text-green-700">
@@ -189,7 +240,7 @@ function LayerToggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className={`flex items-center gap-2 text-sm ${disabled ? "opacity-50" : ""}`}>
+    <label className={`flex items-center gap-2.5 text-sm font-medium text-slate-700 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
       <input
         type="checkbox"
         checked={checked}
@@ -199,6 +250,14 @@ function LayerToggle({
       />
       {label}
     </label>
+  );
+}
+
+function Avatar({ name }: { name: string }) {
+  return (
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-100 text-xs font-black text-green-800 ring-1 ring-green-200">
+      {name.slice(0, 1).toUpperCase()}
+    </span>
   );
 }
 
@@ -244,20 +303,19 @@ function UsersPanel() {
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
-          <UsersIcon className="h-4 w-4 text-green-800" /> Users & permissions
-        </h2>
-        <button
-          onClick={() => setShowCreate((v) => !v)}
-          className="flex items-center gap-1 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950"
-        >
-          <Plus className="h-3.5 w-3.5" /> New user
-        </button>
-      </div>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <SectionHeader
+        icon={<UsersIcon className="h-4.5 w-4.5" />}
+        title="Users & permissions"
+        description={`${users.length || 0} account${users.length === 1 ? "" : "s"} with access to this admin console.`}
+        action={
+          <PrimaryButton onClick={() => setShowCreate((v) => !v)}>
+            <Plus className="h-3.5 w-3.5" /> New user
+          </PrimaryButton>
+        }
+      />
 
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+      {error && <ErrorBanner message={error} />}
 
       {showCreate && (
         <CreateUserForm
@@ -269,20 +327,24 @@ function UsersPanel() {
         />
       )}
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-              <th className="py-2 pr-3">Username</th>
-              <th className="py-2 pr-3">Permissions</th>
-              <th className="py-2 pr-3" />
+            <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <th className="py-2.5 pl-3 pr-3 font-bold">Username</th>
+              <th className="py-2.5 pr-3 font-bold">Permissions</th>
+              <th className="py-2.5 pr-3" />
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} className="border-b border-slate-100 align-top">
-                <td className="py-2 pr-3 font-semibold text-slate-800">{u.username}</td>
-                <td className="py-2 pr-3">
+              <tr key={u.id} className="border-b border-slate-100 align-top last:border-0 hover:bg-slate-50/60">
+                <td className="py-3 pl-3 pr-3">
+                  <div className="flex items-center gap-2 font-semibold text-slate-800">
+                    <Avatar name={u.username} /> {u.username}
+                  </div>
+                </td>
+                <td className="py-3 pr-3">
                   <div className="flex flex-wrap gap-1.5">
                     {catalog.map((p) => (
                       <button
@@ -300,18 +362,29 @@ function UsersPanel() {
                     ))}
                   </div>
                 </td>
-                <td className="py-2 pr-3 text-right">
+                <td className="py-3 pr-3 text-right">
                   <button onClick={() => removeUser(u)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </td>
               </tr>
             ))}
+            {!users.length && (
+              <tr>
+                <td colSpan={3} className="py-5 text-center text-xs text-slate-400">
+                  No users yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
     </section>
   );
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">{children}</p>;
 }
 
 function CreateUserForm({ catalog, onCreated }: { catalog: Permission[]; onCreated: () => void }) {
@@ -340,23 +413,28 @@ function CreateUserForm({ catalog, onCreated }: { catalog: Permission[]; onCreat
   }
 
   return (
-    <form onSubmit={submit} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <div className="mb-2 flex gap-2">
-        <input
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-green-600"
-        />
-        <input
-          placeholder="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-green-600"
-        />
+    <form onSubmit={submit} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="mb-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <FieldLabel>Username</FieldLabel>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700/15"
+          />
+        </div>
+        <div>
+          <FieldLabel>Password</FieldLabel>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700/15"
+          />
+        </div>
       </div>
-      <div className="mb-2 flex flex-wrap gap-1.5">
+      <FieldLabel>Permissions</FieldLabel>
+      <div className="mb-3 flex flex-wrap gap-1.5">
         {catalog.map((p) => (
           <button
             type="button"
@@ -371,7 +449,7 @@ function CreateUserForm({ catalog, onCreated }: { catalog: Permission[]; onCreat
           </button>
         ))}
       </div>
-      {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       <button
         disabled={busy || !username || !password}
         className="flex items-center gap-1.5 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950 disabled:opacity-50"
@@ -423,24 +501,24 @@ function ApiClientsPanel() {
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-1 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
-          <KeyRound className="h-4 w-4 text-green-800" /> 3rd-party API clients
-        </h2>
-        <button
-          onClick={() => setShowCreate((v) => !v)}
-          className="flex items-center gap-1 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950"
-        >
-          <Plus className="h-3.5 w-3.5" /> New API key
-        </button>
-      </div>
-      <p className="mb-3 text-xs text-slate-500">
-        Keys authenticate requests to <code className="rounded bg-slate-100 px-1">POST /api/v1/verify-address</code> — the address/building
-        existence check used by external integrations.
-      </p>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <SectionHeader
+        icon={<KeyRound className="h-4.5 w-4.5" />}
+        title="3rd-party API clients"
+        description={
+          <>
+            Keys authenticate requests to <code className="rounded bg-slate-100 px-1 py-0.5 text-slate-600">POST /api/v1/verify-address</code> — the
+            address/building existence check used by external integrations.
+          </>
+        }
+        action={
+          <PrimaryButton onClick={() => setShowCreate((v) => !v)}>
+            <Plus className="h-3.5 w-3.5" /> New API key
+          </PrimaryButton>
+        }
+      />
 
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+      {error && <ErrorBanner message={error} />}
 
       {showCreate && (
         <CreateApiClientForm
@@ -453,7 +531,7 @@ function ApiClientsPanel() {
       )}
 
       {revealedKey && (
-        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3.5">
           <p className="mb-1.5 text-xs font-bold text-amber-900">API key for "{revealedKey.name}" — copy it now, it won't be shown again:</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg bg-white px-2 py-1.5 text-xs text-slate-800 ring-1 ring-amber-200">
@@ -475,22 +553,22 @@ function ApiClientsPanel() {
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-              <th className="py-2 pr-3">Name</th>
-              <th className="py-2 pr-3">Status</th>
-              <th className="py-2 pr-3">Created</th>
-              <th className="py-2 pr-3">Last used</th>
-              <th className="py-2 pr-3" />
+            <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <th className="py-2.5 pl-3 pr-3 font-bold">Name</th>
+              <th className="py-2.5 pr-3 font-bold">Status</th>
+              <th className="py-2.5 pr-3 font-bold">Created</th>
+              <th className="py-2.5 pr-3 font-bold">Last used</th>
+              <th className="py-2.5 pr-3" />
             </tr>
           </thead>
           <tbody>
             {clients.map((c) => (
-              <tr key={c.id} className="border-b border-slate-100 align-top">
-                <td className="py-2 pr-3 font-semibold text-slate-800">{c.name}</td>
-                <td className="py-2 pr-3">
+              <tr key={c.id} className="border-b border-slate-100 align-top last:border-0 hover:bg-slate-50/60">
+                <td className="py-3 pl-3 pr-3 font-semibold text-slate-800">{c.name}</td>
+                <td className="py-3 pr-3">
                   <button
                     onClick={() => toggleActive(c)}
                     title={c.active ? "Click to revoke" : "Click to reactivate"}
@@ -501,9 +579,9 @@ function ApiClientsPanel() {
                     {c.active ? "Active" : "Revoked"}
                   </button>
                 </td>
-                <td className="py-2 pr-3 text-xs text-slate-500">{new Date(c.created_at).toLocaleDateString()}</td>
-                <td className="py-2 pr-3 text-xs text-slate-500">{c.last_used_at ? new Date(c.last_used_at).toLocaleString() : "Never"}</td>
-                <td className="py-2 pr-3 text-right">
+                <td className="py-3 pr-3 text-xs text-slate-500">{new Date(c.created_at).toLocaleDateString()}</td>
+                <td className="py-3 pr-3 text-xs text-slate-500">{c.last_used_at ? new Date(c.last_used_at).toLocaleString() : "Never"}</td>
+                <td className="py-3 pr-3 text-right">
                   <button onClick={() => removeClient(c)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -512,7 +590,7 @@ function ApiClientsPanel() {
             ))}
             {!clients.length && (
               <tr>
-                <td colSpan={5} className="py-3 text-center text-xs text-slate-400">
+                <td colSpan={5} className="py-5 text-center text-xs text-slate-400">
                   No API clients yet.
                 </td>
               </tr>
@@ -545,16 +623,15 @@ function CreateApiClientForm({ onCreated }: { onCreated: (created: ApiClient & {
   }
 
   return (
-    <form onSubmit={submit} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <div className="mb-2 flex gap-2">
-        <input
-          placeholder="Client name (e.g. NIMC)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-green-600"
-        />
-      </div>
-      {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">{error}</p>}
+    <form onSubmit={submit} className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <FieldLabel>Client name</FieldLabel>
+      <input
+        placeholder="e.g. NIMC"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="mb-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700/15 sm:max-w-xs"
+      />
+      {error && <ErrorBanner message={error} />}
       <button
         disabled={busy || !name.trim()}
         className="flex items-center gap-1.5 rounded-lg bg-green-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-950 disabled:opacity-50"
