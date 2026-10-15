@@ -562,8 +562,11 @@ export default function MapView({
   }, [focusKey, ready]);
 
   return (
-    <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+    // absolute inset-0 (not h-full w-full), both here and on the inner div — the parent is a flex-grown
+    // container, and percentage heights don't resolve against a flex-grown parent's computed height (only an
+    // explicitly-set one); absolute positioning against the parent's `relative` box works regardless.
+    <div className="absolute inset-0">
+      <div ref={containerRef} className="absolute inset-0" />
       {loadError && (
         <div className="absolute inset-0 z-[600] flex items-center justify-center bg-white/90 p-6 text-center text-sm font-semibold text-red-700">
           {loadError}

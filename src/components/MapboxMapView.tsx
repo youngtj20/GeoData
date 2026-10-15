@@ -366,7 +366,15 @@ export default function MapboxMapView({
     });
     map.on("error", (e) => setLoadError(e.error?.message || "Failed to load Mapbox"));
 
+    // Mapbox GL measures its container once at construction time. On the mobile layout (flex `order`
+    // reordering, vh-based heights) that size isn't always settled yet at that exact moment — without this,
+    // the canvas can get stuck rendering at the browser's default size (observed: stuck at 300px tall
+    // regardless of the container's real height) even though the container itself is sized correctly.
+    const resizeObserver = new ResizeObserver(() => map.resize());
+    resizeObserver.observe(containerRef.current);
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
       setReady(false);
@@ -531,7 +539,15 @@ export default function MapboxMapView({
   }, [focusKey, ready]);
 
   return (
-    <div className="agon-map relative h-full w-full">
+    // absolute inset-0 (not h-full w-full), on both this div and the inner one — the parent is a flex-grown
+    // container, and percentage heights don't resolve against a flex-grown parent's computed height (only an
+    // explicitly-set one); absolute positioning against the parent's already-`relative` box works regardless.
+    // Without this, Mapbox GL measures a 0-height container and gets stuck rendering at its default canvas size.
+    <div className="agon-map absolute inset-0">
+      {/* h-full w-full (not absolute inset-0) — mapbox-gl.css itself sets .mapboxgl-map { position: relative },
+          which wins the cascade over any "absolute" utility at equal specificity, so inset-0 would do nothing
+          here anyway. That's fine: the parent above is now genuinely definite-height (absolute+inset, not
+          flex-grow-derived), so percentage height correctly resolves against it. */}
       <div ref={containerRef} className="h-full w-full" />
       {loadError && (
         <div className="absolute inset-0 z-[600] flex items-center justify-center bg-white/90 p-6 text-center text-sm font-semibold text-red-700">
